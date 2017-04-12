@@ -9,6 +9,7 @@
 
 #include <iomanip>
 #include <sstream>
+#include <cmath>
 
 #include "areas.h"
 #include "art-enum.h"
@@ -350,20 +351,10 @@ int raw_spell_fail(spell_type spell)
     ASSERT_RANGE(spell_level, 0, (int) ARRAYSZ(difficulty_by_level));
     chance += difficulty_by_level[spell_level];
 
-    int chance2 = chance;
-
-    const int chance_breaks[][2] =
-    {
-        {45, 45}, {42, 43}, {38, 41}, {35, 40}, {32, 38}, {28, 36},
-        {22, 34}, {16, 32}, {10, 30}, {2, 28}, {-7, 26}, {-12, 24},
-        {-18, 22}, {-24, 20}, {-30, 18}, {-38, 16}, {-46, 14},
-        {-60, 12}, {-80, 10}, {-100, 8}, {-120, 6}, {-140, 4},
-        {-160, 2}, {-180, 0}
-    };
-
-    for (const int (&cbrk)[2] : chance_breaks)
-        if (chance < cbrk[0])
-            chance2 = cbrk[1];
+    // minmay's polynomial (see https://crawl.develz.org/tavern/viewtopic.php?f=8&t=23414)
+    int chance2 = (int) std::round(28.0 + chance * 0.32 
+                                        + chance * chance * 0.0016
+                                        + chance * chance * chance * 0.0000038);
 
     chance2 += get_form()->spellcasting_penalty;
 
