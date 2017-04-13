@@ -325,12 +325,13 @@ int raw_spell_fail(spell_type spell)
     int chance = 60;
 
     // Don't cap power for failure rate purposes.
-    chance -= 6 * calc_spell_power(spell, false, true, false);
-    chance -= (you.intel() * 2);
+    chance -= 6 * calc_spell_power(spell, false, true, false); // realistic range: -6 to -366 (base, -1 to -61)
+    chance -= (you.intel() * 2); // realistic range: -2 to -70
 
     const int armour_shield_penalty = player_armour_shield_spell_penalty();
     dprf("Armour+Shield spell failure penalty: %d", armour_shield_penalty);
-    chance += armour_shield_penalty;
+    chance += armour_shield_penalty; // realistic range: 0 to 500 in extreme cases.
+                                     // A midlevel melee character in plate might have 40 or 50, and a caster in a robe would usually have 0.
 
     static const int difficulty_by_level[] =
     {
@@ -349,12 +350,29 @@ int raw_spell_fail(spell_type spell)
     };
     const int spell_level = spell_difficulty(spell);
     ASSERT_RANGE(spell_level, 0, (int) ARRAYSZ(difficulty_by_level));
-    chance += difficulty_by_level[spell_level];
+    chance += difficulty_by_level[spell_level]; // between 0 and 330
 
-    // minmay's polynomial (see https://crawl.develz.org/tavern/viewtopic.php?f=8&t=23414)
-    int chance2 = (int) std::round(28.0 + chance * 0.32 
-                                        + chance * chance * 0.0016
-                                        + chance * chance * chance * 0.0000038);
+    // This polynomial is a smoother approximation of a breakpoint-based
+    // calculation that originates pre-DCSS, mapping `chance` at this point to
+    // values from around 0 to around 45. (see
+    // https://crawl.develz.org/tavern/viewtopic.php?f=8&t=23414 for some of
+    // the history.)  It was calculated by |amethyst (based on one from minmay
+    // in that thread) and converted to integer values using 262144 as a
+    // convenient power of 2 denominator, then converted to its current form
+    // by Horner's rule.
+    //
+    // The regular (integer) polynomial form before Horner's rule is:
+    //          (x*x*x + 426*x*x + 82670*x + 6983254) / 262144
+    //
+    // Following the old calculation, it is linear above 43.  (In fact, the
+    // old version was linear above 45, but 43 is where this version
+    // converges.) This hits 0 at a `chance` of -173, 10 at a `chance` of -72,
+    // and of course 43 at a `chance` of 43.
+    //
+    // https://www.wolframalpha.com/input/?i=graph+of+(((x+%2B+426)*x+%2B+82670)*x+%2B+6983254)+%2F+262144+with+x+from+-200+to+100
+    //
+    // If you think this is weird, you should see what was here before.
+    int chance2 = chance > 43 ? chance : max((((chance + 426) * chance + 82670) * chance + 6983254) / 262144, 0);
 
     chance2 += get_form()->spellcasting_penalty;
 
@@ -370,10 +388,7 @@ int raw_spell_fail(spell_type spell)
     // Apply the effects of Vehumet and items of wizardry.
     chance2 = _apply_spellcasting_success_boosts(spell, chance2);
 
-    if (chance2 > 100)
-        chance2 = 100;
-
-    return chance2;
+    return min(max(chance2, 0), 100);
 }
 
 int stepdown_spellpower(int power)
